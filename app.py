@@ -25,7 +25,6 @@ class TaskSchma(Schema):
 task_schema = TaskSchma()
 task = []
 
-
 #Home Route
 @app.route('/')
 def home():
@@ -35,7 +34,6 @@ def home():
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
     return jsonify(to_do_list)
-
 
 #Validate Input Data
 @app.route('/api/tasks', methods=['POST'])
