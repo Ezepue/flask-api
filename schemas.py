@@ -1,10 +1,9 @@
-from marshmallow import Schema, fields, ValidationError
+from marshmallow import Schema, fields
 
-# Define Task Schema
-class TaskSchma(Schema):
+class TaskSchema(Schema):
     id = fields.Int(dump_only=True)
     task = fields.Str(required=True)
     done = fields.Bool(required=True)
-    
-task_schema = TaskSchma()
-tasks_schema = TaskSchma(many=True)
+
+task_schema = TaskSchema()
+tasks_schema = TaskSchema(many=True)
