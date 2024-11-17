@@ -1,69 +1,76 @@
-from flask import Flask, jsonify, request
-from marshmallow import Schema, fields, ValidationError
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, request, jsonify
+from models import db, Task
+from schemas import task_schema, tasks_schema
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite=///tasks.db'
-db = SQLAlchemy(app)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tasks.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Define Task Model
-class TaskModel(db.model):
-    id = db.Column(db.Integer, primary_key=True)
-    task = db.Column(db.String(100), nullable=False)
-    done = db.Column(db.Boolean, default=False)
-    
-# Create the database
+db.init_app(app)
+
+# Create the database tables
 with app.app_context():
-    db.create_all
+    db.create_all()
 
-# Define Task Schema
-class TaskSchma(Schema):
-    id = fields.Int()
-    task = fields.Str(required=True)
-    done = fields.Bool(required=True)
-    
-task_schema = TaskSchma()
-task = []
-
-#Home Route
+# Home route
 @app.route('/')
 def home():
-    return jsonify(message="Welcome to Ozmanthus' To-Do API!")
+    return jsonify(message="Welcome to Ozmanthus's To-Do API!")
 
-#Get all tasks
-@app.route('/api/tasks', methods=['GET'])
+# Get all tasks
+@app.route('/tasks', methods=['GET'])
 def get_tasks():
-    return jsonify(to_do_list)
+    tasks = Task.query.all()
+    return tasks_schema.jsonify(tasks)
 
-#Validate Input Data
-@app.route('/api/tasks', methods=['POST'])
-def add_tasks():
+# Get a single task by ID
+@app.route('/tasks/<int:id>', methods=['GET'])
+def get_task(id):
+    task = Task.query.get(id)
+    if task is None:
+        return jsonify({"message": "Task not found"}), 404
+    return task_schema.jsonify(task)
+
+# Add a new task
+@app.route('/tasks', methods=['POST'])
+def add_task():
+    data = request.get_json()
     try:
-        new_task = task_schema.load(request.get_json())
-        new_task["id"] = len(to_do_list) + 1
-        to_do_list.append(new_task)
-        return jsonify(new_task), 201
-    except ValidationError as err:
-        return jsonify(err.messages), 400
+        new_task = task_schema.load(data)
+        task = Task(task=new_task["task"], done=new_task["done"])
+        db.session.add(task)
+        db.session.commit()
+        return task_schema.jsonify(task), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
-# Update a Task
-@app.route('/api/tasks/<int:task_id>', methods=['PUT'])
-def update_task(task_id):
-    updated_task = request.get_json()
-    for task in to_do_list:
-        if task["id"] == task_id:
-            task["task"] = updated_task.get("task", task["task"])
-            task["done"] = updated_task.get("done", task["done"])
-            return jsonify(task)
-    return jsonify({"message": "Task not found"}), 404
-    
-# Delete a Task
-@app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
-def delete_task(task_id):
-    global to_do_list
-    to_do_list = [task for task in to_do_list if task["id"] != task_id]
-    return jsonify({"message": "Task Deleted"}), 200
+# Update a task
+@app.route('/tasks/<int:id>', methods=['PUT'])
+def update_task(id):
+    task = Task.query.get(id)
+    if task is None:
+        return jsonify({"message": "Task not found"}), 404
 
+    data = request.get_json()
+    try:
+        updated_data = task_schema.load(data)
+        task.task = updated_data["task"]
+        task.done = updated_data["done"]
+        db.session.commit()
+        return task_schema.jsonify(task)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+# Delete a task
+@app.route('/tasks/<int:id>', methods=['DELETE'])
+def delete_task(id):
+    task = Task.query.get(id)
+    if task is None:
+        return jsonify({"message": "Task not found"}), 404
+
+    db.session.delete(task)
+    db.session.commit()
+    return jsonify({"message": "Task deleted"}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
