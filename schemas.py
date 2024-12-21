@@ -1,10 +1,10 @@
-from marshmallow import Schema, fields
+from app import ma
+from models import Task, User
 
-#This file handles input validation and serialization using Marshmallow.
-class TaskSchema(Schema):
-    id = fields.Int(dump_only=True)
-    task = fields.Str(required=True)
-    done = fields.Bool(required=True)
+class TaskSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Task
 
-task_schema = TaskSchema()
-tasks_schema = TaskSchema(many=True)
+class UserSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = User

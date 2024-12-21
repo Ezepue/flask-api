@@ -1,76 +1,78 @@
-from flask import Flask, request, jsonify
-from models import db, Task
-from schemas import task_schema, tasks_schema
+from flask import Flask, request, jsonify, render_template
+from flask_sqlalchemy import SQLAlchemy
+from flask_marshmallow import Marshmallow
+from flask_jwt_extended import JWTManager, jwt_required, create_access_token
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tasks.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///tasks.db"
+app.config["JWT_SECRET_KEY"] = "your_secret_key"
+db = SQLAlchemy(app)
+ma = Marshmallow(app)
+jwt = JWTManager(app)
 
-db.init_app(app)
-#This file brings everything together.
-# Create the database tables
-with app.app_context():
-    db.create_all()
+# Import models and schemas
+from models import Task, User
+from schemas import TaskSchema, UserSchema
 
-# Home route
-@app.route('/')
-def home():
-    return jsonify(message="Welcome to Ozmanthus's To-Do API!")
+task_schema = TaskSchema()
+tasks_schema = TaskSchema(many=True)
 
-# Get all tasks
-@app.route('/tasks', methods=['GET'])
+# Routes
+
+# User Registration
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+    new_user = User(username=data["username"], password=data["password"])
+    db.session.add(new_user)
+    db.session.commit()
+    return {"message": "User registered successfully"}
+
+# User Login
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.json
+    user = User.query.filter_by(username=data["username"]).first()
+    if user and user.check_password(data["password"]):
+        token = create_access_token(identity=user.username)
+        return {"access_token": token}
+    return {"error": "Invalid credentials"}, 401
+
+# Get all tasks (with pagination)
+@app.route("/tasks", methods=["GET"])
+@jwt_required()
 def get_tasks():
-    tasks = Task.query.all()
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 10, type=int)
+    tasks = Task.query.paginate(page=page, per_page=per_page, error_out=False)
+    return tasks_schema.jsonify(tasks.items)
+
+# Create a new task
+@app.route("/tasks", methods=["POST"])
+@jwt_required()
+def create_task():
+    data = request.json
+    new_task = Task(name=data["name"], description=data.get("description", ""))
+    db.session.add(new_task)
+    db.session.commit()
+    return task_schema.jsonify(new_task)
+
+# Search tasks
+@app.route("/tasks/search", methods=["GET"])
+@jwt_required()
+def search_tasks():
+    query = request.args.get("q", "")
+    tasks = Task.query.filter(Task.name.ilike(f"%{query}%")).all()
     return tasks_schema.jsonify(tasks)
 
-# Get a single task by ID
-@app.route('/tasks/<int:id>', methods=['GET'])
-def get_task(id):
-    task = Task.query.get(id)
-    if task is None:
-        return jsonify({"message": "Task not found"}), 404
-    return task_schema.jsonify(task)
+# Error Handlers
+@app.errorhandler(404)
+def not_found(error):
+    return {"error": "Resource not found"}, 404
 
-# Add a new task
-@app.route('/tasks', methods=['POST'])
-def add_task():
-    data = request.get_json()
-    try:
-        new_task = task_schema.load(data)
-        task = Task(task=new_task["task"], done=new_task["done"])
-        db.session.add(task)
-        db.session.commit()
-        return task_schema.jsonify(task), 201
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+@app.errorhandler(400)
+def bad_request(error):
+    return {"error": "Bad request"}, 400
 
-# Update a task
-@app.route('/tasks/<int:id>', methods=['PUT'])
-def update_task(id):
-    task = Task.query.get(id)
-    if task is None:
-        return jsonify({"message": "Task not found"}), 404
-
-    data = request.get_json()
-    try:
-        updated_data = task_schema.load(data)
-        task.task = updated_data["task"]
-        task.done = updated_data["done"]
-        db.session.commit()
-        return task_schema.jsonify(task)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-# Delete a task
-@app.route('/tasks/<int:id>', methods=['DELETE'])
-def delete_task(id):
-    task = Task.query.get(id)
-    if task is None:
-        return jsonify({"message": "Task not found"}), 404
-
-    db.session.delete(task)
-    db.session.commit()
-    return jsonify({"message": "Task deleted"}), 200
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
